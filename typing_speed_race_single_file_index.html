@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Typing Speed Race</title>
+  <meta name="description" content="Test your typing speed and accuracy in a timed typing challenge. Single-file app with random paragraphs, error highlighting, live WPM, countdown, and history chart." />
+  <style>
+    :root {
+      --bg: #0b1220;        /* deep navy */
+      --panel: #0f172a;     /* slate-900 */
+      --fg: #e5e7eb;        /* gray-200 */
+      --muted: #94a3b8;     /* slate-400 */
+      --border: #1f2937;    /* slate-800 */
+      --accent: #60a5fa;    /* blue-400 */
+      --correct: rgba(16,185,129,.22); /* emerald-500 @ 22% */
+      --wrong: rgba(239,68,68,.28);    /* red-500 @ 28% */
+      --current: rgba(96,165,250,.35); /* blue-400 @ 35% */
+      --kbd-bg: #111827;    /* gray-900 */
+      --shadow: 0 1px 2px rgba(0,0,0,.30), 0 6px 24px rgba(0,0,0,.30);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--fg);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--fg);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px 20px 28px;
+    }
+
+    .titlebar { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
+    .titlebar h1 { font-size: clamp(20px, 2.6vw, 28px); margin: 0; letter-spacing: .2px; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    button, .select, .ghost {
+      appearance: none; border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+      padding: 10px 14px; border-radius: 10px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+      transition: transform .05s ease, box-shadow .2s; font-size: 14px;
+    }
+    button:hover, .select:hover { box-shadow: 0 2px 4px rgba(0,0,0,.08), 0 6px 16px rgba(0,0,0,.10); }
+    button:active { transform: translateY(1px); }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.ghost { background: transparent; box-shadow: none; }
+
+    .select { display: inline-flex; gap: 8px; align-items: center; }
+    .select input[type="radio"]{ display:none; }
+    .select label{ padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; font-weight: 600; }
+    .select input:checked + label { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-top: 14px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); }
+    .stat { display: flex; align-items: baseline; gap: 12px; justify-content: center; }
+    .stat .value { font-size: clamp(24px, 3.6vw, 40px); font-weight: 800; letter-spacing: .3px; }
+    .stat .label { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; font-weight: 700; }
+
+    .typing-wrap { margin-top: 18px; }
+    .typing-area { position: relative; border: 2px solid var(--border); border-radius: 16px; min-height: 240px; padding: 20px; box-shadow: var(--shadow); cursor: text; background: var(--panel); }
+    .typing-area:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px #2563eb22, var(--shadow); }
+    .text-layer { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: clamp(18px, 2.2vw, 22px); line-height: 1.75; letter-spacing: .2px; white-space: pre-wrap; word-break: break-word; }
+    .text-layer span.correct { background: var(--correct); }
+    .text-layer span.wrong   { background: var(--wrong); text-decoration: underline; text-decoration-thickness: 2px; }
+    .text-layer span.current { background: var(--current); box-shadow: inset 0 -2px 0 var(--accent); }
+
+    /* Invisible textarea to capture input while showing caret */
+    #key-capture {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      background: transparent; color: transparent; caret-color: transparent;
+      font: inherit; line-height: 1.75; letter-spacing: .2px;
+      border: none; outline: none; resize: none; padding: 20px; margin: 0; 
+      white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; 
+    }
+    /* Make sure clicks go through to the container but we can still programmatically focus */
+    #key-capture { pointer-events: none; }
+
+    .help { margin-top: 10px; font-size: 13px; color: var(--muted); }
+    kbd { background: var(--kbd-bg); border: 1px solid var(--border); border-bottom-color: #d1d5db; border-radius: 6px; padding: 1px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; }
+
+    .actions { display:flex; gap:10px; margin-top: 16px; flex-wrap: wrap; }
+
+    /* Countdown overlay */
+    .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); backdrop-filter: blur(2px); z-index: 50; }
+    .overlay.show { display: flex; }
+    .count { font-weight: 900; font-size: clamp(48px, 8vw, 120px); color: var(--accent); text-shadow: 0 6px 20px rgba(37,99,235,.2); animation: pop .7s ease both; }
+    @keyframes pop { 0%{ transform: scale(.6); opacity: 0 } 60%{ transform: scale(1.1); opacity: 1 } 100%{ transform: scale(1); opacity: 1 } }
+
+    /* History */
+    .history { margin-top: 26px; display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; }
+    @media (max-width: 900px) { .history { grid-template-columns: 1fr; } }
+
+    .chart { height: 200px; width: 100%; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); padding: 12px; box-shadow: var(--shadow); }
+    .chart h3 { margin: 4px 6px 10px; font-size: 14px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+
+    .history-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .history-table th, .history-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+    .history-table th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
+    .history-table tr:last-child td { border-bottom: none; }
+
+    .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align:center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container titlebar">
+      <h1>Typing Speed Race</h1>
+      <div class="controls">
+        <div class="select" role="group" aria-label="Duration">
+          <input id="d15" type="radio" name="duration" value="15"><label for="d15">15s</label>
+          <input id="d30" type="radio" name="duration" value="30" checked><label for="d30">30s</label>
+          <input id="d60" type="radio" name="duration" value="60"><label for="d60">60s</label>
+        </div>
+        <button id="btn-new" title="New text">New Text</button>
+        <button id="btn-start" class="primary" title="Start the race"><span>Start</span></button>
+        <button id="btn-reset" class="ghost" title="Reset">Reset</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="stats">
+      <div class="card stat"><div class="value" id="stat-wpm">0</div><div class="label">WPM</div></div>
+      <div class="card stat"><div class="value" id="stat-acc">100%</div><div class="label">Accuracy</div></div>
+      <div class="card stat"><div class="value" id="stat-time">30.0</div><div class="label">Time Left (s)</div></div>
+    </section>
+
+    <section class="typing-wrap">
+      <div id="typing-area" class="typing-area" aria-live="polite" aria-label="Typing area (click to focus)">
+        <div id="text-layer" class="text-layer" aria-hidden="true"></div>
+        <textarea id="key-capture" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+      </div>
+      <div class="help">Tip: Click the typing area (or press <kbd>Tab</kbd>) then <kbd>Start</kbd>. You can press <kbd>Esc</kbd> to reset.</div>
+      <div class="actions">
+        <button id="btn-skip">Skip sentence</button>
+        <button id="btn-clear-history" class="ghost">Clear history</button>
+      </div>
+    </section>
+
+    <section class="history">
+      <div class="chart card">
+        <h3>WPM History</h3>
+        <svg id="chart" width="100%" height="140" viewBox="0 0 600 140" preserveAspectRatio="none" role="img" aria-label="History chart"></svg>
+      </div>
+      <div class="card">
+        <table class="history-table" aria-label="Session history">
+          <thead>
+            <tr><th>Date</th><th>WPM</th><th>Accuracy</th><th>Dur.</th></tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="footer">All data is stored in your browser. No sign-in required.</p>
+  </main>
+
+  <div id="overlay" class="overlay" aria-hidden="true"><div id="count" class="count">3</div></div>
+
+  <script>
+    // ---------- Random sentence pool (each item is one sentence) ----------
+    const SENTENCES = [
+      "The morning air was clear and cool, and the town stirred as if waking from a long and gentle dream.",
+      "Patterns emerge when you write every day: small choices become habits, and habits quietly shape the work.",
+      "The library kept a hush that was never forced, a silence made from turning pages and careful footsteps.",
+      "If you measure progress only by speed, you miss the craft inside the movement of steady practice.",
+      "Between the rails the weeds grew tall, but the signal lights still blinked their calm instructions.",
+      "A map is not the ground beneath your shoes, yet it whispers where the paths might lead.",
+      "She carried a notebook with a red elastic band and wrote down details most people would overlook.",
+      "The tea cooled on the windowsill while a thin cloud crossed the late afternoon sun.",
+      "Music drifted from the open door and the rhythm braided itself with the sound of rain.",
+      "On the ferry everyone watched the shoreline, pretending not to watch each other.",
+      "Dust lifted in sunbeams, turning the old workshop into a slow and golden snow globe.",
+      "A lighthouse keeps its promise without applause, casting the same circle of light again and again.",
+      "The first snow did not shout; it arrived like a secret, soft and bright on every step.",
+      "Practice cuts its own staircase through difficult hills; each step is small, and each step matters.",
+      "A clock ticked in the hallway, calm as a metronome for the house itself.",
+      "We learn the rules so that we may forget them at the right moment and play with care.",
+      "Starlight is patient; it carries the past across a distance we can name but hardly imagine.",
+      "He kept a list of tiny repairs and crossed them off with cheerful ceremony.",
+      "Every craft has a rhythm; listen long enough and your hands will find it.",
+      "When the bus braked, loose coins chimed in someone's coat pocket like a brief and accidental song.",
+      "There is a point in each project when the fog lifts, not because the work is finished, but because you know the way.",
+      "A blank page is not empty; it is a room with the lights off, waiting for your hand to find the switch.",
+      "The market smelled of oranges, coffee, and fresh bread; the morning moved on rails of conversation.",
+      "Confidence is a neighbor to curiosity, and both of them like to borrow sugar from practice.",
+      "You cannot rush a good question; it arrives when the ground is ready for it.",
+      "The trail switchbacked up the hill and every turn revealed a new slice of the valley below.",
+      "A small error repeated becomes a style; a small correction repeated becomes a skill.",
+      "The rain wrote its own punctuation on the water, commas and ellipses widening into rings.",
+      "The city kept its secrets in plain sight, folded into shadows and streetlight.",
+      "Tools do not make the craft, but they can invite you to begin.",
+      "The workshop clock chimed and the whole room seemed to nod in agreement.",
+      "Practice is hope in motion; it is the belief that better is possible and worth the time."
+    ];
+
+    // ---------- State ----------
+    let target = "";          // full text for current test
+    let targetChars = [];     // Array of characters (pre-split to avoid entity index issues)
+    let running = false;
+    let startedAt = 0;        // ms
+    let duration = 30;        // seconds
+    let timerId = null;       // interval id
+
+    // Cached DOM
+    const textLayer = document.getElementById('text-layer');
+    const input = document.getElementById('key-capture');
+    const area = document.getElementById('typing-area');
+    const statWpm = document.getElementById('stat-wpm');
+    const statAcc = document.getElementById('stat-acc');
+    const statTime = document.getElementById('stat-time');
+    const btnStart = document.getElementById('btn-start');
+    const btnReset = document.getElementById('btn-reset');
+    const btnNew   = document.getElementById('btn-new');
+    const btnSkip  = document.getElementById('btn-skip');
+    const btnClear = document.getElementById('btn-clear-history');
+    const overlay  = document.getElementById('overlay');
+    const countEl  = document.getElementById('count');
+
+    const chartEl  = document.getElementById('chart');
+    const historyBody = document.getElementById('history-body');
+
+    // ---------- Helpers ----------
+    function escapeHtml(str){
+      return str.replace(/[&<>"']/g, (c)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    }
+
+    // Build a paragraph from several sentences (2–4), no repeats in one paragraph
+    function pickParagraph(){
+      const count = 2 + Math.floor(Math.random()*3); // 2..4 sentences
+      const used = new Set();
+      const parts = [];
+      while(parts.length < count){
+        const i = Math.floor(Math.random() * SENTENCES.length);
+        if(!used.has(i)) { used.add(i); parts.push(SENTENCES[i]); }
+      }
+      return parts.join(' ');
+    }
+
+    function render(text, typed){
+      const src = targetChars.length ? targetChars : Array.from(text);
+      const typedChars = Array.from(typed);
+      const out = [];
+      const L = typedChars.length;
+      for(let i=0;i<src.length;i++){
+        const ch = src[i];
+        let cls = '';
+        if(i < L){
+          cls = (typedChars[i] === ch) ? 'correct' : 'wrong';
+        } else if(i === L && running){
+          cls = 'current';
+        }
+        const safe = escapeHtml(ch);
+        if(ch === ' '){
+          out.push(`<span class="${cls}" style="border-bottom: ${cls? '1px dotted #475569' : 'none'}">&nbsp;</span>`);
+        } else {
+          out.push(`<span class="${cls}">${safe}</span>`);
+        }
+      }
+      textLayer.innerHTML = out.join('');
+    }
+
+    function computeStats(typed){
+      const now = Date.now();
+      const elapsedMs = Math.max(1, now - startedAt);
+      const minutes = elapsedMs / 60000;
+      const typedChars = Array.from(typed);
+      let correct = 0;
+      for(let i=0;i<typedChars.length && i<targetChars.length;i++){
+        if(typedChars[i] === targetChars[i]) correct++;
+      }
+      const accuracy = typedChars.length === 0 ? 100 : (correct / typedChars.length) * 100;
+      const wpm = minutes > 0 ? ((typedChars.length / 5) / minutes) : 0; // gross WPM
+      return { wpm, accuracy, elapsedMs };
+    }
+
+    function updateStatsUI({wpm, accuracy, remaining}){
+      statWpm.textContent = Math.round(wpm);
+      statAcc.textContent = `${Math.max(0, Math.min(100, accuracy)).toFixed(0)}%`;
+      statTime.textContent = remaining.toFixed(1);
+    }
+
+    // ---------- Timer & Control Flow ----------
+    function setDurationFromUI(){
+      const checked = document.querySelector('input[name="duration"]:checked');
+      duration = Number(checked?.value || 30);
+      statTime.textContent = duration.toFixed(1);
+    }
+
+    function newText(){
+      target = pickParagraph();
+      targetChars = Array.from(target);
+      input.value = '';
+      render(target, '');
+      updateStatsUI({ wpm:0, accuracy:100, remaining: Number(document.querySelector('input[name="duration"]:checked')?.value || 30) });
+    }
+
+    function startCountdownThenRun(){
+      if(running) return; // ignore
+      // Prepare
+      const d = Number(document.querySelector('input[name="duration"]:checked')?.value || 30);
+      duration = d;
+      let remaining = d;
+      updateStatsUI({ wpm:0, accuracy:100, remaining });
+      input.value = '';
+      render(target, '');
+
+      overlay.classList.add('show');
+      overlay.setAttribute('aria-hidden', 'false');
+      const seq = ['3','2','1','GO'];
+      let idx = 0;
+      countEl.textContent = seq[idx];
+      countEl.style.animation = 'none'; countEl.offsetHeight; countEl.style.animation = '';
+      const cd = setInterval(()=>{
+        idx++;
+        if(idx < seq.length){
+          countEl.textContent = seq[idx];
+          countEl.style.animation = 'none'; countEl.offsetHeight; countEl.style.animation = '';
+        } else {
+          clearInterval(cd);
+          overlay.classList.remove('show');
+          overlay.setAttribute('aria-hidden', 'true');
+          runTest();
+        }
+      }, 700);
+    }
+
+    function runTest(){
+      running = true;
+      startedAt = Date.now();
+      const endAt = startedAt + duration * 1000;
+      input.focus();
+
+      const tick = ()=>{
+        const now = Date.now();
+        const remaining = Math.max(0, (endAt - now) / 1000);
+        const stats = computeStats(input.value);
+        updateStatsUI({ wpm: stats.wpm, accuracy: stats.accuracy, remaining });
+        render(target, input.value);
+        if(remaining <= 0){
+          stopTest(true);
+        }
+      };
+      timerId = setInterval(tick, 100);
+      tick();
+    }
+
+    function stopTest(finished=false){
+      if(timerId){ clearInterval(timerId); timerId = null; }
+      const stats = computeStats(input.value);
+      running = false;
+      render(target, input.value);
+      if(finished){
+        const result = {
+          ts: new Date().toISOString(),
+          wpm: Math.round(stats.wpm),
+          acc: Math.round(Math.max(0, Math.min(100, stats.accuracy))),
+          dur: duration
+        };
+        const history = loadHistory();
+        history.push(result);
+        while(history.length > 50) history.shift();
+        localStorage.setItem('tsr_history', JSON.stringify(history));
+        drawChart(history);
+        renderHistoryTable(history);
+        btnStart.querySelector('span').textContent = 'Start Again';
+      }
+    }
+
+    function resetAll(){
+      if(timerId){ clearInterval(timerId); timerId = null; }
+      running = false; startedAt = 0;
+      input.value = '';
+      setDurationFromUI();
+      render(target, '');
+      updateStatsUI({ wpm:0, accuracy:100, remaining: duration });
+      btnStart.querySelector('span').textContent = 'Start';
+    }
+
+    // ---------- History (localStorage) ----------
+    function loadHistory(){
+      try{ return JSON.parse(localStorage.getItem('tsr_history') || '[]'); }
+      catch{ return []; }
+    }
+
+    function drawChart(history){
+      const svg = chartEl;
+      svg.innerHTML = '';
+      const W = 600, H = 140, pad = 22;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      if(history.length === 0){
+        const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x', String(W/2));
+        t.setAttribute('y', String(H/2));
+        t.setAttribute('text-anchor','middle');
+        t.setAttribute('fill','#9ca3af');
+        t.setAttribute('font-size','14');
+        t.textContent = 'No sessions yet. Finish a race to see your chart.';
+        svg.appendChild(t);
+        return;
+      }
+      const data = history.map(h=>h.wpm);
+      const maxY = Math.max(50, Math.max(...data));
+      const minY = 0;
+      const n = data.length;
+      const x = i => pad + (i*(W-2*pad))/Math.max(1,n-1);
+      const y = v => H - pad - ( (v - minY) / (maxY - minY) ) * (H - 2*pad);
+
+      [0, maxY/2, maxY].forEach(val=>{
+        const yv = y(val);
+        const g = document.createElementNS('http://www.w3.org/2000/svg','line');
+        g.setAttribute('x1', String(pad)); g.setAttribute('x2', String(W-pad));
+        g.setAttribute('y1', String(yv)); g.setAttribute('y2', String(yv));
+        g.setAttribute('stroke', '#334155'); g.setAttribute('stroke-width', '1');
+        svg.appendChild(g);
+        const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+        label.setAttribute('x', String(W - pad)); label.setAttribute('y', String(yv - 4));
+        label.setAttribute('text-anchor','end'); label.setAttribute('fill','#94a3b8');
+        label.setAttribute('font-size','10'); label.textContent = `${Math.round(val)} WPM`;
+        svg.appendChild(label);
+      });
+
+      let d = '';
+      data.forEach((v,i)=>{ const X = x(i), Y = y(v); d += (i? ' L':'M') + X + ' ' + Y; });
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d', d);
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke', '#60a5fa');
+      path.setAttribute('stroke-width','2.5');
+      svg.appendChild(path);
+
+      data.forEach((v,i)=>{
+        const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx', String(x(i)));
+        c.setAttribute('cy', String(y(v)));
+        c.setAttribute('r', '3');
+        c.setAttribute('fill', '#60a5fa');
+        svg.appendChild(c);
+      });
+    }
+
+    function renderHistoryTable(history){
+      historyBody.innerHTML = history.slice().reverse().slice(0,10).map(h=>{
+        const dt = new Date(h.ts);
+        const date = dt.toLocaleString(undefined, { hour: '2-digit', minute:'2-digit', year:'numeric', month:'short', day:'2-digit' });
+        return `<tr><td>${date}</td><td><strong>${h.wpm}</strong></td><td>${h.acc}%</td><td>${h.dur}s</td></tr>`;
+      }).join('');
+    }
+
+    // ---------- Events ----------
+    area.addEventListener('click', ()=> input.focus());
+
+    document.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape'){ e.preventDefault(); resetAll(); }
+      if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='r'){ e.preventDefault(); resetAll(); }
+      if(e.key === 'Enter' && !running){ e.preventDefault(); startCountdownThenRun(); }
+    });
+
+    input.addEventListener('input', ()=>{
+      if(!running) { input.value = ''; return; }
+      const ta = Array.from(input.value);
+      if(ta.length > targetChars.length){ input.value = ta.slice(0, targetChars.length).join(''); }
+      render(target, input.value);
+      const stats = computeStats(input.value);
+      const now = Date.now();
+      const remaining = Math.max(0, (startedAt + duration*1000 - now)/1000);
+      updateStatsUI({ wpm: stats.wpm, accuracy: stats.accuracy, remaining });
+    });
+
+    input.addEventListener('paste', e=> e.preventDefault());
+
+    btnStart.addEventListener('click', startCountdownThenRun);
+    btnReset.addEventListener('click', resetAll);
+    btnNew.addEventListener('click', ()=>{ newText(); resetAll(); });
+    btnSkip.addEventListener('click', ()=>{ target = pickParagraph(); targetChars = Array.from(target); render(target, running ? input.value : ''); });
+    btnClear.addEventListener('click', ()=>{ localStorage.removeItem('tsr_history'); drawChart([]); renderHistoryTable([]); });
+
+    document.querySelectorAll('input[name="duration"]').forEach(r => r.addEventListener('change', ()=>{
+      setDurationFromUI();
+    }));
+
+    // ---------- Init ----------
+    newText();
+    setDurationFromUI();
+    drawChart(loadHistory());
+    renderHistoryTable(loadHistory());
+  </script>
+</body>
+</html>
