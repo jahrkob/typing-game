@@ -117,12 +117,20 @@
     .history-table tr:last-child td { border-bottom: none; }
 
     .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align:center; }
+      /* Prevent baseline shift on highlighted spaces */
+    .text-layer span.space-underline{ background-image: linear-gradient(to bottom, transparent calc(100% - 1px), #475569 0); background-repeat: no-repeat; }
+      /* Title + subtitle */
+    .titlebar .title{ display:flex; flex-direction:column; gap:4px; }
+    .titlebar .subtitle{ margin:0; color: var(--muted); font-size: clamp(12px, 1.6vw, 14px); font-weight: 600; letter-spacing: .2px; }
   </style>
 </head>
 <body>
   <header>
     <div class="container titlebar">
-      <h1>Typing Speed Race</h1>
+      <div class="title">
+        <h1>Typing Speed Race</h1>
+        <p class="subtitle">Test your words per minute and accuracy in a timed typing challenge.</p>
+      </div>
       <div class="controls">
         <div class="select" role="group" aria-label="Duration">
           <input id="d15" type="radio" name="duration" value="15"><label for="d15">15s</label>
@@ -269,8 +277,9 @@
           cls = 'current';
         }
         const safe = escapeHtml(ch);
-        if(ch === ' '){
-          out.push(`<span class="${cls}" style="border-bottom: ${cls? '1px dotted #475569' : 'none'}">&nbsp;</span>`);
+        if (ch === ' ') {
+          const underline = cls ? ' space-underline' : '';
+          out.push(`<span class="sp ${cls}${underline}">&nbsp;</span>`);
         } else {
           out.push(`<span class="${cls}">${safe}</span>`);
         }
